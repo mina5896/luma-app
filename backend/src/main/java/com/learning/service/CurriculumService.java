@@ -4,37 +4,52 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.learning.dto.CurriculumDto;
 import com.learning.dto.GeminiTextRequest;
 import com.learning.dto.GeminiTextResponse;
+import com.learning.model.Topic;
+import com.learning.repository.TopicRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 
 import java.io.IOException;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 @Service
 public class CurriculumService {
 
-    private static final String AI_CURRICULUM_PROMPT_TEMPLATE = """
+    // --- UPDATED PROMPT WITH AN EXAMPLE ---
+    private static final String AI_PERSONALIZED_CURRICULUM_PROMPT = """
     **ROLE & GOAL:**
-    You are an expert curriculum planner. Your task is to generate a complete topic overview, including a category, description, and a list of specific learning objectives.
+    You are an expert curriculum planner creating a personalized learning path for a user based on their performance on a placement test.
+
+    **USER CONTEXT:**
+    * **Topic:** %s
+    * **Assessment Results:** The user struggled with questions related to the following concepts, indicating these are their weak areas: %s
 
     **INSTRUCTIONS:**
-    1.  Determine a single, broad category for the topic (e.g., "Programming", "History", "Science").
-    2.  Write a concise, engaging description for the overall topic (2-3 sentences).
-    3.  Provide a direct, functional image URL from a free stock photo website like Pexels or Unsplash.
-    4.  Create a list of 12 to 15 distinct, beginner-friendly learning objective titles. The list MUST be in a logical, sequential order that builds from simple to complex.
-    5.  All titles MUST be in Title Case (e.g., "What Is a Java Variable?").
-    6.  Your entire response MUST be **ONLY** a single, raw, valid JSON object.
+    1.  Analyze the user's weak areas from the assessment results.
+    2.  Generate a curriculum of 12-15 logically sequenced learning objective titles in Title Case. You MUST generate a list of exactly 8 to 12 logically sequenced learning objective titles. Do not generate more or less.
+    3.  The curriculum MUST start with a brief review of fundamentals but then **focus heavily on the user's identified weak areas**.
+    4.  You must stay on topic and avoid introducing unrelated concepts.
+    5.  The category field should be a single, broad category (e.g., "Programming", "History", "Science").
+    6.  Write a concise, engaging description for the overall topic (2-3 sentences).
+    7.  Provide a direct, functional image URL from a free stock photo website
+    8.  All titles MUST be in Title Case (e.g., "What Is a Java Variable?").
+    9.  Your entire response MUST be **ONLY** a single, raw, valid JSON object.
 
-    **EXAMPLE:**
+    **EXAMPLE (Your output MUST follow this structure):**
     {
       "category": "Programming",
-      "description": "An introduction to the fundamentals of the Java language...",
-      "image_url": "https://images.pexels.com/photos/1181244/pexels-photo-1181244.jpeg",
-      "learning_objectives": ["What Is Java?", "Understanding Variables and Data Types", "Exploring Basic Operators"]
+      "description": "A personalized introduction to Java, focusing on areas you'll find most useful.",
+      "image_url": "https://images.pexels.com/photos/270348/pexels-photo-270348.jpeg",
+      "learning_objectives": ["Review of Java Basics", "Deep Dive into Loops", "Mastering Conditional Statements"]
     }
 
     **TOPIC TO PLAN:**
@@ -43,22 +58,65 @@ public class CurriculumService {
 
     @Autowired
     private RestTemplate restTemplate;
+    @Autowired
+    private TopicRepository topicRepository;
+    @Autowired
+    private ContentProcessingService contentProcessingService;
 
     @Value("${ai.api.key}")
     private String apiKey;
     @Value("${ai.api.url}")
     private String apiUrl;
 
-    public CurriculumDto generateCurriculum(String topicName) {
-        System.out.println("Generating full curriculum and topic details for: " + topicName);
-        String promptText = String.format(AI_CURRICULUM_PROMPT_TEMPLATE, topicName);
+    @Async
+    public void generatePersonalizedCurriculum(String topic, List<Map<String, String>> userAnswers) {
+        String weakAreasSummary = userAnswers.stream()
+            .map(answer -> answer.get("questionText"))
+            .collect(Collectors.joining(", "));
+
+        if (weakAreasSummary.isEmpty()) {
+            weakAreasSummary = "general fundamentals, as no specific errors were made.";
+        }
+
+        String promptText = String.format(AI_PERSONALIZED_CURRICULUM_PROMPT, topic, weakAreasSummary, topic);
         
+        CurriculumDto curriculum = getCurriculumFromAI(promptText);
+        
+        if (curriculum != null && curriculum.getLearningObjectives() != null) {
+            Topic mainTopic = topicRepository.findByName(topic).orElseGet(() -> {
+                Topic newTopic = new Topic();
+                newTopic.setName(topic);
+                return topicRepository.save(newTopic);
+            });
+            mainTopic.setCategory(curriculum.getCategory());
+            mainTopic.setDescription(curriculum.getDescription());
+            mainTopic.setImageUrl(curriculum.getImageUrl());
+            topicRepository.save(mainTopic);
+
+            for (int i = 0; i < curriculum.getLearningObjectives().size(); i++) {
+                String objectiveTitle = curriculum.getLearningObjectives().get(i);
+                System.out.println("\n--- Processing Objective: " + objectiveTitle + " ---");
+                contentProcessingService.generateAndSaveContent(topic, objectiveTitle, i);
+                try {
+                    TimeUnit.SECONDS.sleep(10);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    System.err.println("Rate limit sleep was interrupted.");
+                }
+            }
+            System.out.println("\n--- FULL PERSONALIZED CONTENT GENERATION FINISHED for " + topic + " ---");
+        } else {
+            System.out.println("Failed to generate personalized curriculum from AI.");
+        }
+    }
+
+    private CurriculumDto getCurriculumFromAI(String promptText) {
         try {
             String jsonResponse = callAi(promptText);
             ObjectMapper objectMapper = new ObjectMapper();
             return objectMapper.readValue(jsonResponse, CurriculumDto.class);
         } catch (IOException e) {
-            System.err.println("Error generating curriculum for topic: " + topicName);
+            System.err.println("Error parsing curriculum DTO from AI.");
             e.printStackTrace();
         }
         return null;
@@ -70,7 +128,6 @@ public class CurriculumService {
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
         HttpEntity<GeminiTextRequest> entity = new HttpEntity<>(apiRequest, headers);
-
         GeminiTextResponse geminiResponse = restTemplate.postForObject(urlWithKey, entity, GeminiTextResponse.class);
 
         if (geminiResponse != null && !geminiResponse.getCandidates().isEmpty()) {

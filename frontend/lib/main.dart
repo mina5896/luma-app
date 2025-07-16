@@ -1,4 +1,3 @@
-// lib/main.dart
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:luma/screens/topics_screen.dart';
@@ -33,7 +32,8 @@ class LumaApp extends StatelessWidget {
           iconTheme: const IconThemeData(color: Colors.white),
           titleTextStyle: GoogleFonts.nunito(
             color: Colors.white,
-            fontSize: 22,
+            // --- THIS IS THE FIX ---
+            fontSize: 20, // Reduced from 22
             fontWeight: FontWeight.bold,
           ),
         ),
