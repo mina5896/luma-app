@@ -1,3 +1,5 @@
+import 'dart:convert';
+import 'package:luma/models/review_item.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class PersistenceService {
@@ -7,6 +9,84 @@ class PersistenceService {
   static const String _completedTopicsKey = 'completed_topics'; // New key
   static const String _userNameKey = 'user_name';
   static const String _avatarIdKey = 'avatar_id';
+  // New key for review items
+  static const String _reviewItemsKey = 'review_items';
+
+ // --- NEW: Spaced Repetition Methods ---
+
+  // Schedules a question for review after an incorrect answer
+  Future<void> scheduleForReview(String questionId) async {
+    final allItems = await getReviewItems();
+    // Remove any existing review for this question to avoid duplicates
+    allItems.removeWhere((item) => item.questionId == questionId);
+    
+    // Add the new review item, scheduled for 1 day from now
+    final newItem = ReviewItem(
+      questionId: questionId,
+      nextReviewDate: DateTime.now().add(const Duration(days: 1)),
+      level: 1, // Start at SRS level 1
+    );
+    allItems.add(newItem);
+    await _saveReviewItems(allItems);
+  }
+  
+  // Updates a review item after it has been reviewed
+  Future<void> updateReviewItem(String questionId, bool answeredCorrectly) async {
+    final allItems = await getReviewItems();
+    final itemIndex = allItems.indexWhere((item) => item.questionId == questionId);
+
+    if (itemIndex != -1) {
+      final item = allItems[itemIndex];
+      if (answeredCorrectly) {
+        // Correct answer: Increase SRS level and schedule for later
+        final newLevel = item.level + 1;
+        final nextReview = DateTime.now().add(_getDurationForLevel(newLevel));
+        allItems[itemIndex] = ReviewItem(
+          questionId: questionId,
+          nextReviewDate: nextReview,
+          level: newLevel,
+        );
+      } else {
+        // Incorrect answer: Reset SRS level and schedule for tomorrow
+        allItems[itemIndex] = ReviewItem(
+          questionId: questionId,
+          nextReviewDate: DateTime.now().add(const Duration(days: 1)),
+          level: 1,
+        );
+      }
+      await _saveReviewItems(allItems);
+    }
+  }
+
+  // Helper to determine the next review duration based on SRS level
+  Duration _getDurationForLevel(int level) {
+    switch (level) {
+      case 1: return const Duration(days: 1);
+      case 2: return const Duration(days: 3);
+      case 3: return const Duration(days: 7);
+      case 4: return const Duration(days: 14);
+      case 5: return const Duration(days: 30);
+      default: return const Duration(days: 60);
+    }
+  }
+
+  Future<List<ReviewItem>> getReviewItems() async {
+    final prefs = await SharedPreferences.getInstance();
+    final itemsAsJson = prefs.getStringList(_reviewItemsKey) ?? [];
+    return itemsAsJson.map((itemJson) => ReviewItem.fromJson(json.decode(itemJson))).toList();
+  }
+
+  Future<void> _saveReviewItems(List<ReviewItem> items) async {
+    final prefs = await SharedPreferences.getInstance();
+    final List<String> itemsAsJson = items.map((item) => json.encode(item.toJson())).toList();
+    await prefs.setStringList(_reviewItemsKey, itemsAsJson);
+  }
+
+  Future<List<ReviewItem>> getDueReviewItems() async {
+    final allItems = await getReviewItems();
+    final now = DateTime.now();
+    return allItems.where((item) => item.nextReviewDate.isBefore(now)).toList();
+  }
 
   // --- Unlocked Level Methods (unchanged) ---
   Future<void> saveUnlockedLevel(String topicId, int level) async {

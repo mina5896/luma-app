@@ -8,6 +8,7 @@ import '../services/persistence_service.dart';
 import '../widgets/topic_path/lesson_node.dart';
 import '../widgets/topic_path/path_painter.dart';
 import '../widgets/topic_path/cinematic_unlock_animation.dart';
+import 'package:luma/models/review_item.dart';
 
 class TopicDetailScreen extends StatefulWidget {
   final String topicId;
@@ -26,6 +27,7 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> with TickerProvid
   late AnimationController _unlockAnimationController;
   int _animatingIndex = -1;
   List<Offset> _nodePositions = [];
+  List<ReviewItem> _dueReviewItems = [];
 
   @override
   void initState() {
@@ -35,15 +37,21 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> with TickerProvid
     _loadProgress();
   }
 
-  Future<void> _loadProgress() async {
-    final savedLevel = await _persistenceService.getUnlockedLevel(widget.topicId);
+   Future<void> _loadProgress() async {
+    // Load both unlocked level and due review items in parallel
+    final results = await Future.wait([
+      _persistenceService.getUnlockedLevel(widget.topicId),
+      _persistenceService.getDueReviewItems(),
+    ]);
     if (mounted) {
       setState(() {
-        _unlockedLevel = savedLevel;
+        _unlockedLevel = results[0] as int;
+        _dueReviewItems = results[1] as List<ReviewItem>;
         _isLoadingProgress = false;
       });
     }
   }
+
 
   void _handleNodeTap(int index, LearningObjectiveSummary objective) async {
     final isLocked = index > _unlockedLevel;
@@ -121,6 +129,14 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> with TickerProvid
                     return Center(child: Text('Error: ${snapshot.error}'));
                   } else if (snapshot.hasData) {
                     final objectives = snapshot.data!.learningObjectives;
+                    // --- NEW LOGIC: Inject review nodes ---
+                    final List<dynamic> pathItems = List.from(objectives);
+                    if (_dueReviewItems.isNotEmpty) {
+                      // A simple strategy: add a review session after every 3 lessons
+                      for (int i = 3; i < pathItems.length; i += 4) {
+                        pathItems.insert(i, _dueReviewItems);
+                      }
+                    }
                     _nodePositions = _generateNodePositions(objectives.length, context);
 
                     if (_nodePositions.isEmpty) return const Center(child: Text('No lessons in this topic yet.'));

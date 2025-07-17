@@ -6,6 +6,7 @@ import 'package:luma/models/assessment_question.dart'; // New import
 import 'package:luma/models/learning_objective_detail.dart';
 import 'package:luma/models/topic_detail.dart';
 import 'package:luma/models/topic_summary.dart';
+import 'package:luma/models/question_detail.dart';
 
 class ApiService {
   final String _baseUrl = "http://192.168.1.149:8080/api"; 
@@ -19,6 +20,22 @@ class ApiService {
     );
     if (response.statusCode != 202) {
       throw Exception('Failed to start generic curriculum generation');
+    }
+  }
+
+  Future<List<QuestionDetail>> getQuestionDetailsByIds(List<String> questionIds) async {
+    final response = await http.post(
+      Uri.parse('$_baseUrl/questions/details'),
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode(questionIds),
+    );
+
+    if (response.statusCode == 200) {
+      final decodedBody = utf8.decode(response.bodyBytes);
+      List<dynamic> data = json.decode(decodedBody);
+      return data.map((json) => QuestionDetail.fromJson(json)).toList();
+    } else {
+      throw Exception('Failed to load question details');
     }
   }
 

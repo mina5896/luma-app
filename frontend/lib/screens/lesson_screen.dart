@@ -1,16 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:luma/models/block_type.dart';
 import 'package:luma/models/learning_objective_detail.dart';
+import 'package:luma/models/content_block_detail.dart';
+import 'package:luma/models/question_detail.dart';
 import 'package:luma/services/api_service.dart';
+import 'package:luma/services/persistence_service.dart';
 import 'package:luma/screens/lesson_complete_screen.dart';
 import 'package:luma/widgets/lesson/code_quiz_card.dart';
 import 'package:luma/widgets/lesson/content_widgets.dart';
 import 'package:luma/widgets/lesson/feedback_bottom_sheet.dart';
 import 'package:luma/widgets/lesson/quiz_card.dart';
 import 'package:luma/widgets/lesson/lesson_nav_buttons.dart';
-import 'package:luma/widgets/lesson/luma_mascot.dart';
-import 'package:luma/models/content_block_detail.dart';
-import 'package:luma/widgets/themed_background.dart';
 
 class LessonPage {
   final dynamic content;
@@ -30,9 +30,11 @@ class LessonScreen extends StatefulWidget {
 class _LessonScreenState extends State<LessonScreen> {
   late Future<LearningObjectiveDetail> _lessonFuture;
   final ApiService _apiService = ApiService();
+  final PersistenceService _persistenceService = PersistenceService(); // Add persistence service
   final PageController _pageController = PageController();
   List<LessonPage> _pages = [];
   int _currentPage = 0;
+  int _totalXp = 0;
   bool _isAnswered = false;
 
   @override
@@ -59,15 +61,22 @@ class _LessonScreenState extends State<LessonScreen> {
     }
     setState(() => _pages = newPages);
   }
-  
+
   @override
   void dispose() {
     _pageController.dispose();
     super.dispose();
   }
 
-  void _onAnswerSelected(bool isCorrect, String explanation) {
+  // --- THIS METHOD IS UPDATED ---
+  void _onAnswerSelected(String questionId, bool isCorrect, String explanation) {
     setState(() => _isAnswered = true);
+    if (isCorrect) {
+      setState(() => _totalXp += 10);
+    } else {
+      // If the answer is incorrect, save it for future review
+      _persistenceService.scheduleForReview(questionId);
+    }
     showModalBottomSheet(
         context: context,
         isDismissible: false,
@@ -89,7 +98,7 @@ class _LessonScreenState extends State<LessonScreen> {
       } else {
         final bool? lessonReallyCompleted = await Navigator.push<bool>(
           context,
-          MaterialPageRoute(builder: (context) => LessonCompleteScreen(totalXp: 100)),
+          MaterialPageRoute(builder: (context) => LessonCompleteScreen(totalXp: _totalXp)),
         );
         if (lessonReallyCompleted == true && mounted) {
           Navigator.of(context).pop(true);
@@ -105,8 +114,8 @@ class _LessonScreenState extends State<LessonScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Theme.of(context).colorScheme.surface,
-      body: ThemedBackground( child: SafeArea(
+      backgroundColor: Theme.of(context).colorScheme.background,
+      body: SafeArea(
         child: FutureBuilder<LearningObjectiveDetail>(
           future: _lessonFuture,
           builder: (context, snapshot) {
@@ -115,7 +124,6 @@ class _LessonScreenState extends State<LessonScreen> {
             } else if (snapshot.hasError) {
               return Center(child: Text('Error: ${snapshot.error}'));
             } else if (snapshot.hasData) {
-              final isCurrentPageQuiz = _pages[_currentPage].isQuiz;
               return Column(
                 children: [
                   Padding(
@@ -135,46 +143,38 @@ class _LessonScreenState extends State<LessonScreen> {
                     ),
                   ),
                   Expanded(
-                    // --- THIS IS THE RESTORED PART ---
-                    child: Stack(
-                      children: [
-                        PageView.builder(
-                          controller: _pageController,
-                          physics: const NeverScrollableScrollPhysics(),
-                          onPageChanged: (index) => setState(() {
-                            _currentPage = index;
-                            _isAnswered = false;
-                          }),
-                          itemCount: _pages.length,
-                          itemBuilder: (context, index) {
-                            final page = _pages[index];
-                            if (page.isQuiz) {
-                              if (page.content is ContentBlockDetail) {
-                                return CodeQuizCard(
-                                  key: ValueKey(page.content.id),
-                                  block: page.content,
-                                  onAnswerSelected: _onAnswerSelected,
-                                );
-                              } else {
-                                return QuizCard(
-                                  key: ValueKey(page.content.id),
-                                  question: page.content,
-                                  onAnswerSelected: _onAnswerSelected,
-                                );
-                              }
-                            } else {
-                              return _buildContentWidget(page.content);
-                            }
-                          },
-                        ),
-                        // Show the reading mascot on non-quiz pages
-                        if (!isCurrentPageQuiz)
-                          const Positioned(
-                            bottom: 20,
-                            right: 20,
-                            child: LumaMascot(state: MascotState.reading),
-                          ),
-                      ],
+                    child: PageView.builder(
+                      controller: _pageController,
+                      physics: const NeverScrollableScrollPhysics(),
+                      onPageChanged: (index) => setState(() {
+                        _currentPage = index;
+                        _isAnswered = false;
+                      }),
+                      itemCount: _pages.length,
+                      itemBuilder: (context, index) {
+                        final page = _pages[index];
+                        if (page.isQuiz) {
+                          // --- THIS IS THE UPDATED PART ---
+                          if (page.content is ContentBlockDetail) {
+                            final block = page.content as ContentBlockDetail;
+                            final question = block.questions.first;
+                            return CodeQuizCard(
+                              key: ValueKey(block.id),
+                              block: block,
+                              onAnswerSelected: (isCorrect, explanation) => _onAnswerSelected(question.id, isCorrect, explanation),
+                            );
+                          } else {
+                            final question = page.content as QuestionDetail;
+                            return QuizCard(
+                              key: ValueKey(question.id),
+                              question: question,
+                              onAnswerSelected: (isCorrect, explanation) => _onAnswerSelected(question.id, isCorrect, explanation),
+                            );
+                          }
+                        } else {
+                          return _buildContentWidget(page.content);
+                        }
+                      },
                     ),
                   ),
                   LessonNavButtons(
@@ -190,7 +190,7 @@ class _LessonScreenState extends State<LessonScreen> {
             return const Center(child: Text('No lesson data found.'));
           },
         ),
-      ),),
+      ),
     );
   }
 
