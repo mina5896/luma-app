@@ -1,5 +1,6 @@
 package com.learning.dto;
 
+import com.learning.model.TopicStatus; // Import the enum
 import java.util.UUID;
 
 public class TopicSummaryDto {
@@ -8,19 +9,21 @@ public class TopicSummaryDto {
     private String description;
     private String category;
     private String imageUrl;
-    private long totalObjectives; // New field for progress
+    private long totalObjectives;
+    private TopicStatus status; // The new field
 
     // --- Constructors ---
     public TopicSummaryDto() {
     }
 
-    public TopicSummaryDto(UUID id, String name, String description, String category, String imageUrl, long totalObjectives) {
+    public TopicSummaryDto(UUID id, String name, String description, String category, String imageUrl, long totalObjectives, TopicStatus status) {
         this.id = id;
         this.name = name;
         this.description = description;
         this.category = category;
         this.imageUrl = imageUrl;
         this.totalObjectives = totalObjectives;
+        this.status = status; // Add to constructor
     }
     
     // --- Getters and Setters ---
@@ -36,4 +39,6 @@ public class TopicSummaryDto {
     public void setImageUrl(String imageUrl) { this.imageUrl = imageUrl; }
     public long getTotalObjectives() { return totalObjectives; }
     public void setTotalObjectives(long totalObjectives) { this.totalObjectives = totalObjectives; }
+    public TopicStatus getStatus() { return status; }
+    public void setStatus(TopicStatus status) { this.status = status; }
 }

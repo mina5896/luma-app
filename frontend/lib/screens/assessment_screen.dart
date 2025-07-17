@@ -38,32 +38,44 @@ class _AssessmentScreenState extends State<AssessmentScreen> {
       'correctAnswerKey': correctKey,
     });
 
-    // Wait a moment after showing feedback, then move on
-    Future.delayed(const Duration(milliseconds: 1500), () {
-      if (!mounted) return;
-      if (_currentPage < totalQuestions - 1) {
-        _pageController.nextPage(
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeInOut,
-        );
-      } else {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(
-            builder: (context) => AssessmentResultsScreen(
-              topic: widget.topic,
-              answers: _userAnswers,
-            ),
-          ),
-        );
+    // --- THIS IS THE UPDATED LOGIC ---
+    // If the user selected "I don't know", move on immediately.
+    if (selectedKey == 'idk') {
+      _moveToNextPage(totalQuestions);
+      return;
+    }
+    
+    // Otherwise, wait a moment to show feedback, then move on.
+    Future.delayed(const Duration(milliseconds: 1200), () {
+      if (mounted) {
+        _moveToNextPage(totalQuestions);
       }
     });
+  }
+
+  void _moveToNextPage(int totalQuestions) {
+    if (_currentPage < totalQuestions - 1) {
+      _pageController.nextPage(
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeInOut,
+      );
+    } else {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (context) => AssessmentResultsScreen(
+            topic: widget.topic,
+            answers: _userAnswers,
+          ),
+        ),
+      );
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text("${widget.topic} Placement Test", maxLines: 2,)),
+      appBar: AppBar(title: Text("${widget.topic} Placement Test")),
       body: ThemedBackground(
         child: FutureBuilder<List<AssessmentQuestion>>(
           future: _assessmentFuture,
@@ -96,7 +108,7 @@ class _AssessmentScreenState extends State<AssessmentScreen> {
                   Expanded(
                     child: PageView.builder(
                       controller: _pageController,
-                      physics: const NeverScrollableScrollPhysics(), // User cannot swipe
+                      physics: const NeverScrollableScrollPhysics(),
                       itemCount: questions.length,
                       onPageChanged: (index) => setState(() => _currentPage = index),
                       itemBuilder: (context, index) {
@@ -139,6 +151,9 @@ class _AssessmentQuizCardState extends State<_AssessmentQuizCard> {
 
   @override
   Widget build(BuildContext context) {
+    final allOptions = Map<String, String>.from(widget.question.options);
+    allOptions['idk'] = "I don't know";
+
     return SingleChildScrollView(
       padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 16.0),
       child: Column(
@@ -148,15 +163,16 @@ class _AssessmentQuizCardState extends State<_AssessmentQuizCard> {
           const SizedBox(height: 24),
           Text(widget.question.questionText, style: Theme.of(context).textTheme.titleLarge?.copyWith(height: 1.4, fontWeight: FontWeight.bold)),
           const SizedBox(height: 32),
-          ...widget.question.options.entries.map((entry) {
+          ...allOptions.entries.map((entry) {
             final isSelected = _selectedKey == entry.key;
-            final isCorrect = entry.key == widget.question.correctAnswerKey;
+            final isCorrect = entry.key != 'idk' && entry.key == widget.question.correctAnswerKey;
             
-            Color tileColor = Theme.of(context).colorScheme.surface.withOpacity(0.5);
+            Color? tileColor;
             BorderSide borderSide = BorderSide(color: Colors.grey.shade700);
             Widget? trailingIcon;
 
             if (_selectedKey != null) {
+              // Only show right/wrong feedback for actual answers
               if (isCorrect) {
                 tileColor = Colors.green.withOpacity(0.25);
                 borderSide = const BorderSide(color: Colors.green, width: 2);

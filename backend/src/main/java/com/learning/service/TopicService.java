@@ -2,7 +2,7 @@ package com.learning.service;
 
 import com.learning.dto.LearningObjectiveSummaryDto;
 import com.learning.dto.TopicDetailDto;
-import com.learning.dto.TopicSummaryDto; // Import the new DTO
+import com.learning.dto.TopicSummaryDto;
 import com.learning.model.LearningObject;
 import com.learning.model.Topic;
 import com.learning.repository.LearningObjectRepository;
@@ -23,20 +23,20 @@ public class TopicService {
     @Autowired
     private LearningObjectRepository learningObjectRepository;
 
-    // --- NEW METHOD TO GET SUMMARIES WITH PROGRESS ---
     public List<TopicSummaryDto> getTopicSummaries() {
-        System.out.println("I AM HERE-------------");
         List<Topic> topics = topicRepository.findAll();
-
+        
         return topics.stream().map(topic -> {
             long totalObjectives = learningObjectRepository.countByTopicId(topic.getId());
             return new TopicSummaryDto(
-                    topic.getId(),
-                    topic.getName(),
-                    topic.getDescription(),
-                    topic.getCategory(),
-                    topic.getImageUrl(),
-                    totalObjectives);
+                topic.getId(),
+                topic.getName(),
+                topic.getDescription(),
+                topic.getCategory(),
+                topic.getImageUrl(),
+                totalObjectives,
+                topic.getStatus() // Pass the status from the entity to the DTO
+            );
         }).collect(Collectors.toList());
     }
 

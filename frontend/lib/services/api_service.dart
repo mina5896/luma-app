@@ -11,6 +11,17 @@ class ApiService {
   final String _baseUrl = "http://192.168.1.149:8080/api"; 
  // "http://10.178.57.80:8080/api";
 
+ Future<void> generateGenericCurriculum(String topic) async {
+    final response = await http.post(
+      Uri.parse('$_baseUrl/learning-flow/generate-generic-curriculum'),
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode({'topic': topic}),
+    );
+    if (response.statusCode != 202) {
+      throw Exception('Failed to start generic curriculum generation');
+    }
+  }
+
   // --- NEW METHOD: Get Assessment Questions ---
   Future<List<AssessmentQuestion>> getAssessmentQuestions(String topic) async {
     final response = await http.post(

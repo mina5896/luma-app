@@ -1,3 +1,4 @@
+// src/main/java/com/learning/controller/LearningFlowController.java
 package com.learning.controller;
 
 import com.learning.dto.AssessmentQuestionDto;
@@ -31,14 +32,14 @@ public class LearningFlowController {
 
     @PostMapping("/generate-curriculum")
     public ResponseEntity<Void> generatePersonalizedCurriculum(@RequestBody PersonalizedCurriculumRequestDto request) {
-        System.out.println("Received request to generate curriculum for topic: " + request.getTopic());
-        System.out.println("User Answers: " + request.getUserAnswers());
-        
-        // --- THIS IS THE CORRECTED PART ---
-        // This now correctly calls the asynchronous service method.
-        // The service will run in the background, and the API will return an immediate "202 Accepted" response.
         curriculumService.generatePersonalizedCurriculum(request.getTopic(), request.getUserAnswers());
-        
+        return ResponseEntity.accepted().build();
+    }
+
+    // --- NEW ENDPOINT ---
+    @PostMapping("/generate-generic-curriculum")
+    public ResponseEntity<Void> generateGenericCurriculum(@RequestBody AssessmentRequestDto request) {
+        curriculumService.generateAndSaveGenericCurriculum(request.getTopic());
         return ResponseEntity.accepted().build();
     }
 }

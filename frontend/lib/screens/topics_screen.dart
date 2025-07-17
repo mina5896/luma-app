@@ -1,12 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:luma/models/topic_summary.dart';
-import 'package:luma/screens/assessment_screen.dart';
+import 'package:luma/screens/new_topic_screen.dart';
 import 'package:luma/screens/profile_screen.dart';
 import 'package:luma/screens/topic_detail_screen.dart';
 import 'package:luma/services/api_service.dart';
 import 'package:luma/services/persistence_service.dart';
 import 'package:luma/widgets/themed_background.dart';
 import 'package:luma/widgets/topic_progress_indicator.dart';
+import 'package:luma/widgets/lesson/luma_mascot.dart';
 
 class TopicsScreen extends StatefulWidget {
   const TopicsScreen({super.key});
@@ -19,7 +20,6 @@ class _TopicsScreenState extends State<TopicsScreen> {
   Future<List<TopicSummary>>? _topicsFuture;
   final ApiService _apiService = ApiService();
   final PersistenceService _persistenceService = PersistenceService();
-  String? _generatingTopic;
 
   @override
   void initState() {
@@ -29,51 +29,18 @@ class _TopicsScreenState extends State<TopicsScreen> {
 
   void _fetchTopics() {
     setState(() {
-      _generatingTopic = null; // Clear generating topic on refresh
       _topicsFuture = _apiService.getTopicSummaries();
     });
   }
 
-  Future<void> _showNewTopicDialog() async {
-    final topicController = TextEditingController();
-    final topic = await showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text("Learn Something New"),
-        content: TextField(
-          controller: topicController,
-          autofocus: true,
-          decoration: const InputDecoration(hintText: "Enter a topic..."),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text("Cancel")),
-          TextButton(
-            onPressed: () {
-              if (topicController.text.isNotEmpty) {
-                Navigator.of(context).pop(topicController.text);
-              }
-            },
-            child: const Text("Start"),
-          ),
-        ],
-      ),
+  Future<void> _navigateToNewTopicScreen() async {
+    // This will trigger the backend generation.
+    // When we come back, we'll refresh the list.
+    await Navigator.push<String>(
+      context,
+      MaterialPageRoute(builder: (context) => const NewTopicScreen()),
     );
-
-    if (topic != null && topic.isNotEmpty && mounted) {
-      // --- THIS IS THE UPDATED PART ---
-      // The assessment flow will now return the topic name if generation starts
-      final String? generatingTopicName = await Navigator.push<String>(
-        context,
-        MaterialPageRoute(builder: (context) => AssessmentScreen(topic: topic)),
-      );
-      if (generatingTopicName != null) {
-        setState(() {
-          _generatingTopic = generatingTopicName;
-        });
-        // After a delay, refresh the topics list to show the new course
-        Future.delayed(const Duration(seconds: 45), _fetchTopics);
-      }
-    }
+    _fetchTopics();
   }
 
   @override
@@ -84,12 +51,15 @@ class _TopicsScreenState extends State<TopicsScreen> {
         actions: [
           IconButton(
             icon: const Icon(Icons.person_rounded, size: 30),
-            onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const ProfileScreen())),
+            onPressed: () {
+              Navigator.push(context, MaterialPageRoute(builder: (context) => const ProfileScreen()))
+                  .then((_) => _fetchTopics()); // Refresh on return from profile
+            },
           )
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: _showNewTopicDialog,
+        onPressed: _navigateToNewTopicScreen,
         icon: const Icon(Icons.add),
         label: const Text("Learn New Topic"),
         backgroundColor: Theme.of(context).colorScheme.primary,
@@ -101,34 +71,75 @@ class _TopicsScreenState extends State<TopicsScreen> {
           child: FutureBuilder<List<TopicSummary>>(
             future: _topicsFuture,
             builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting && _generatingTopic == null) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
                 return const Center(child: CircularProgressIndicator());
               } else if (snapshot.hasError) {
                 return Center(child: Text('Error loading topics: ${snapshot.error}'));
               }
               
               final topics = snapshot.data ?? [];
+              
+              if (topics.isEmpty) {
+                return const _EmptyStateView();
+              }
+
+              // Sort topics to show "GENERATING" ones at the top
+              topics.sort((a, b) {
+                if (a.status == TopicStatus.GENERATING) return -1;
+                if (b.status == TopicStatus.GENERATING) return 1;
+                return a.name.compareTo(b.name);
+              });
 
               return ListView.builder(
-                padding: const EdgeInsets.all(16.0),
-                itemCount: topics.length + (_generatingTopic != null ? 1 : 0),
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 80), // Padding for FAB
+                itemCount: topics.length,
                 itemBuilder: (context, index) {
-                  // If a topic is generating, show its card at the top
-                  if (_generatingTopic != null && index == 0) {
-                    return GeneratingTopicCard(topicName: _generatingTopic!);
+                  final topic = topics[index];
+                  // Use the status from the backend to decide which card to show
+                  if (topic.status == TopicStatus.GENERATING) {
+                    return GeneratingTopicCard(topicName: topic.name);
+                  } else {
+                    return TopicCard(
+                      topic: topic,
+                      persistenceService: _persistenceService,
+                      onNavigate: _fetchTopics,
+                    );
                   }
-                  final topicIndex = _generatingTopic != null ? index - 1 : index;
-                  final topic = topics[topicIndex];
-                  return TopicCard(
-                    topic: topic,
-                    persistenceService: _persistenceService,
-                    onNavigate: _fetchTopics,
-                  );
                 },
               );
             },
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _EmptyStateView extends StatelessWidget {
+  const _EmptyStateView();
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const LumaMascot(state: MascotState.happy),
+          const SizedBox(height: 24),
+          Text(
+            "Your learning journey starts here!",
+            style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 8),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 40.0),
+            child: Text(
+              "Tap the '+' button below to create your first personalized course.",
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.bodyLarge?.copyWith(color: Colors.white70),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -213,7 +224,7 @@ class GeneratingTopicCard extends StatelessWidget {
         contentPadding: const EdgeInsets.all(20),
         leading: const CircularProgressIndicator(),
         title: Text("Generating '$topicName'..."),
-        subtitle: const Text("This may take a moment. The list will refresh automatically."),
+        subtitle: const Text("This may take a moment. You can pull down to refresh."),
       ),
     );
   }

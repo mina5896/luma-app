@@ -1,11 +1,6 @@
 package com.learning.model;
 
-import jakarta.persistence.Column; // Make sure to import this
-import jakarta.persistence.Entity;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
-import jakarta.persistence.Id;
-import jakarta.persistence.Table;
+import jakarta.persistence.*; // Import EnumType and Enumerated
 import java.util.UUID;
 
 @Entity
@@ -27,6 +22,9 @@ public class Topic {
     // --- AND ADD THIS ANNOTATION ---
     @Column(columnDefinition = "TEXT")
     private String imageUrl;
+
+    @Enumerated(EnumType.STRING)
+    private TopicStatus status;
 
     // --- Constructors, Getters, and Setters remain the same ---
 
@@ -71,5 +69,12 @@ public class Topic {
 
     public void setImageUrl(String imageUrl) {
         this.imageUrl = imageUrl;
+    }
+
+    public TopicStatus getStatus() {
+        return status;
+    }
+    public void setStatus(TopicStatus status) {
+        this.status = status;
     }
 }

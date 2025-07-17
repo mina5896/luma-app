@@ -126,7 +126,7 @@ public class ContentProcessingService {
     private String apiUrl;
 
     @Transactional
-    public void generateAndSaveContent(String mainTopicName, String learningObjectiveTitle, int order) {
+    public void generateAndSaveContent(String mainTopicName, String learningObjectiveTitle, int order, int totalObjectives) {
         System.out.println("Starting content generation for objective: " + learningObjectiveTitle);
         try {
             String promptText = String.format(AI_PROMPT_TEMPLATE, learningObjectiveTitle);
@@ -180,6 +180,12 @@ public class ContentProcessingService {
                     }
                 }
                 System.out.println("Successfully saved complete Learning Object structure for: " + savedLearningObject.getTitle());
+                if (order == totalObjectives - 1) {
+                  // Set the topic status to READY when the last objective is processed
+                  topic.setStatus(TopicStatus.READY);
+                  topicRepository.save(topic);
+                  System.out.println("--- Topic '" + mainTopicName + "' is now READY. ---");
+                }
             }
         } catch (IOException e) {
             System.err.println("Error processing objective: " + learningObjectiveTitle);
